@@ -252,6 +252,10 @@ export default function App() {
     sceneManagerRef.current?.resetARPlacement();
   }, []);
 
+  const handleRotateChairInAR = useCallback((deltaAngle: number) => {
+    sceneManagerRef.current?.rotateChairInAR(deltaAngle);
+  }, []);
+
   const isARActive = (inXRSession && xrMode === 'immersive-ar') || isCameraARActive || isSimulatingAR;
 
   return (
@@ -276,6 +280,7 @@ export default function App() {
             onFabricChange={handleFabricChange}
             showLabels={showLabels}
             onToggleLabels={handleToggleLabels}
+            onRotateChair={handleRotateChairInAR}
           />
         )}
 

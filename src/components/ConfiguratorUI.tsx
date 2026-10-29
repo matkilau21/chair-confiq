@@ -68,7 +68,7 @@ export function ConfiguratorUI({
   showLabels,
   onToggleLabels,
 }: ConfiguratorUIProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [activeTab, setActiveTab] = useState<'materials' | 'camera' | 'inspect'>('materials');
 
   // Dynamic pricing based on selections
