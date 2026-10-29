@@ -6,6 +6,7 @@ interface XRModalProps {
   errorMessage?: string | null;
   onRetryAR?: () => void;
   onRetryVR?: () => void;
+  onStartSimulation?: () => void;
   appUrl: string;
 }
 
@@ -15,6 +16,7 @@ export function XRModal({
   errorMessage,
   onRetryAR,
   onRetryVR,
+  onStartSimulation,
   appUrl,
 }: XRModalProps) {
   if (!isOpen) return null;
@@ -79,14 +81,27 @@ export function XRModal({
                   Project the chair onto your actual floor at true 1:1 scale using ARCore or WebXR.
                 </p>
               </div>
-              {onRetryAR && (
-                <button
-                  onClick={onRetryAR}
-                  className="mt-3 w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition-colors"
-                >
-                  Launch AR Session
-                </button>
-              )}
+              <div className="mt-3 flex flex-col gap-1.5">
+                {onRetryAR && (
+                  <button
+                    onClick={onRetryAR}
+                    className="w-full py-2 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs transition-colors"
+                  >
+                    Launch AR Session
+                  </button>
+                )}
+                {onStartSimulation && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onStartSimulation();
+                    }}
+                    className="w-full py-1.5 px-3 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-600/50 font-medium text-[11px] transition-colors"
+                  >
+                    Preview Tap-to-Spawn in Browser
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="p-4 rounded-xl bg-[#23272F] border border-[#2F3540] flex flex-col justify-between">

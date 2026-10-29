@@ -3,14 +3,17 @@ import {
   initChairScene,
   ChairSceneManager,
   CameraPreset,
+  ARPlacementStatus,
 } from './three/sceneManager';
 import { FabricColorKey, LegMaterialKey } from './three/chairBuilder';
 import { ConfiguratorUI } from './components/ConfiguratorUI';
 import { DimensionsModal } from './components/DimensionsModal';
 import { XRModal } from './components/XRModal';
+import { AROverlayHUD } from './components/AROverlayHUD';
 
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
+  const overlayRootRef = useRef<HTMLDivElement>(null);
   const sceneManagerRef = useRef<ChairSceneManager | null>(null);
 
   // Configurator state
@@ -21,11 +24,16 @@ export default function App() {
   const [explodedFactor, setExplodedFactor] = useState<number>(0);
   const [isBrightLighting, setIsBrightLighting] = useState<boolean>(false);
 
-  // Modals & XR feedback
+  // AR & WebXR state
+  const [inXRSession, setInXRSession] = useState<boolean>(false);
+  const [xrMode, setXrMode] = useState<'immersive-ar' | 'immersive-vr' | null>(null);
+  const [arStatus, setArStatus] = useState<ARPlacementStatus>('scanning');
+  const [isSimulatingAR, setIsSimulatingAR] = useState<boolean>(false);
+
+  // Modals
   const [isSpecsOpen, setIsSpecsOpen] = useState<boolean>(false);
   const [isXRModalOpen, setIsXRModalOpen] = useState<boolean>(false);
   const [xrErrorMessage, setXRErrorMessage] = useState<string | null>(null);
-  const [inXRSession, setInXRSession] = useState<boolean>(false);
 
   // Initialize Three.js scene
   useEffect(() => {
@@ -34,9 +42,15 @@ export default function App() {
     const manager = initChairScene(mountRef.current, {
       onXRSessionStart: (mode) => {
         setInXRSession(true);
+        setXrMode(mode);
       },
       onXRSessionEnd: () => {
         setInXRSession(false);
+        setXrMode(null);
+        setIsSimulatingAR(false);
+      },
+      onARStatusChange: (status) => {
+        setArStatus(status);
       },
     });
 
@@ -51,7 +65,6 @@ export default function App() {
 
     // Keyboard shortcuts for convenience
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
       if (e.key === '1') {
@@ -70,6 +83,11 @@ export default function App() {
           manager.toggleAutoRotate(next);
           return next;
         });
+      } else if (e.key === 'Escape') {
+        if (isSimulatingAR) {
+          manager.stopSimulationMode();
+          setIsSimulatingAR(false);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -80,7 +98,7 @@ export default function App() {
       manager.dispose();
       sceneManagerRef.current = null;
     };
-  }, []);
+  }, [isSimulatingAR]);
 
   // Handlers for state updates with direct Three.js scene binding
   const handleFabricChange = useCallback((key: FabricColorKey) => {
@@ -135,7 +153,7 @@ export default function App() {
     }
   }, [fabricKey, legKey]);
 
-  // WebXR Launching (AR & VR)
+  // AR & VR Launch Handlers
   const handleLaunchAR = useCallback(async () => {
     setXRErrorMessage(null);
     if (!sceneManagerRef.current) return;
@@ -143,17 +161,20 @@ export default function App() {
     const isSupported = await sceneManagerRef.current.isXRSupported('immersive-ar');
     if (!isSupported) {
       setXRErrorMessage(
-        'Immersive AR is not supported by your current browser or hardware setup. You can scan the QR code to open directly on your mobile device (Android Chrome / iOS AR) or Meta Quest.'
+        'Immersive AR is not detected on your current desktop browser. You can click "Preview Tap-to-Spawn in Browser" below to test the floor detection circle and click-to-spawn immediately, or scan the QR code to open on your Android/iOS device!'
       );
       setIsXRModalOpen(true);
       return;
     }
 
     try {
-      await sceneManagerRef.current.startXRSession('immersive-ar');
+      await sceneManagerRef.current.startXRSession(
+        'immersive-ar',
+        overlayRootRef.current ?? undefined
+      );
     } catch (err: any) {
       setXRErrorMessage(
-        err?.message || 'Unable to launch AR session. Please check camera and WebXR permissions.'
+        err?.message || 'Unable to start WebXR AR session. Please check device permissions.'
       );
       setIsXRModalOpen(true);
     }
@@ -166,7 +187,7 @@ export default function App() {
     const isSupported = await sceneManagerRef.current.isXRSupported('immersive-vr');
     if (!isSupported) {
       setXRErrorMessage(
-        'Immersive VR requires a connected WebXR headset (such as Meta Quest 2/3/Pro, HTC Vive, Pico, or Vision Pro) or a WebXR Emulator extension.'
+        'Immersive VR requires a connected WebXR headset (Meta Quest 2/3/Pro, HTC Vive, Pico, or Vision Pro).'
       );
       setIsXRModalOpen(true);
       return;
@@ -176,11 +197,39 @@ export default function App() {
       await sceneManagerRef.current.startXRSession('immersive-vr');
     } catch (err: any) {
       setXRErrorMessage(
-        err?.message || 'Unable to launch VR session. Please ensure your VR headset is connected and awake.'
+        err?.message || 'Unable to launch VR session. Please ensure your VR headset is connected.'
       );
       setIsXRModalOpen(true);
     }
   }, []);
+
+  // Simulation mode for testing flat surface scan and tap-to-spawn in browser
+  const handleStartSimulation = useCallback(() => {
+    if (!sceneManagerRef.current) return;
+    sceneManagerRef.current.startSimulationMode();
+    setIsSimulatingAR(true);
+    setArStatus('scanning');
+  }, []);
+
+  const handleExitAR = useCallback(() => {
+    if (inXRSession) {
+      sceneManagerRef.current?.endXRSession();
+    }
+    if (isSimulatingAR) {
+      sceneManagerRef.current?.stopSimulationMode();
+      setIsSimulatingAR(false);
+    }
+  }, [inXRSession, isSimulatingAR]);
+
+  const handleSpawnClick = useCallback(() => {
+    sceneManagerRef.current?.spawnChairAtReticle();
+  }, []);
+
+  const handleResetPlacement = useCallback(() => {
+    sceneManagerRef.current?.resetARPlacement();
+  }, []);
+
+  const isARActive = (inXRSession && xrMode === 'immersive-ar') || isSimulatingAR;
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#E4E7EB]">
@@ -190,20 +239,36 @@ export default function App() {
         className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
       />
 
-      {/* When inside an active WebXR session, show minimal floating exit overlay */}
-      {inXRSession && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
-          <button
-            onClick={() => sceneManagerRef.current?.endXRSession()}
-            className="px-5 py-2.5 rounded-full bg-red-600/90 hover:bg-red-500 text-white font-medium text-xs shadow-lg backdrop-blur-sm transition-all"
-          >
-            Exit WebXR Experience
-          </button>
-        </div>
-      )}
+      {/* WebXR DOM Overlay / HUD container */}
+      <div ref={overlayRootRef} className="absolute inset-0 pointer-events-none">
+        {/* If in AR (real WebXR or Simulation), show surface scan HUD with tap-to-spawn prompt */}
+        {isARActive && (
+          <AROverlayHUD
+            status={arStatus}
+            isSimulation={isSimulatingAR}
+            onSpawnClick={handleSpawnClick}
+            onResetPlacement={handleResetPlacement}
+            onExit={handleExitAR}
+            fabricKey={fabricKey}
+            onFabricChange={handleFabricChange}
+          />
+        )}
 
-      {/* Interactive HUD / Collapsible Bottom Dock */}
-      {!inXRSession && (
+        {/* If in VR session, show minimal floating exit button */}
+        {inXRSession && xrMode === 'immersive-vr' && (
+          <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+            <button
+              onClick={() => sceneManagerRef.current?.endXRSession()}
+              className="px-5 py-2.5 rounded-full bg-red-600/90 hover:bg-red-500 text-white font-medium text-xs shadow-lg backdrop-blur-sm transition-all"
+            >
+              Exit VR Studio
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Standard Studio Configurator HUD (collapsible bottom dock) */}
+      {!isARActive && !(inXRSession && xrMode === 'immersive-vr') && (
         <ConfiguratorUI
           fabricKey={fabricKey}
           onFabricChange={handleFabricChange}
@@ -220,6 +285,7 @@ export default function App() {
           onTakeScreenshot={handleTakeScreenshot}
           onLaunchAR={handleLaunchAR}
           onLaunchVR={handleLaunchVR}
+          onStartSimulation={handleStartSimulation}
           onOpenSpecs={() => setIsSpecsOpen(true)}
           onOpenXRGuide={() => {
             setXRErrorMessage(null);
@@ -243,6 +309,7 @@ export default function App() {
         errorMessage={xrErrorMessage}
         onRetryAR={handleLaunchAR}
         onRetryVR={handleLaunchVR}
+        onStartSimulation={handleStartSimulation}
         appUrl={window.location.href}
       />
     </div>

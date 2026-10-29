@@ -40,6 +40,7 @@ interface ConfiguratorUIProps {
   onLaunchVR: () => void;
   onOpenSpecs: () => void;
   onOpenXRGuide: () => void;
+  onStartSimulation: () => void;
 }
 
 export function ConfiguratorUI({
@@ -60,6 +61,7 @@ export function ConfiguratorUI({
   onLaunchVR,
   onOpenSpecs,
   onOpenXRGuide,
+  onStartSimulation,
 }: ConfiguratorUIProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<'materials' | 'camera' | 'inspect'>('materials');
@@ -399,21 +401,31 @@ export function ConfiguratorUI({
                 </div>
               </div>
 
-              <div className="pt-2 flex items-center justify-between border-t border-[#262C36] text-xs">
+              <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[#262C36] text-xs">
                 <button
-                  onClick={onOpenXRGuide}
-                  className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 font-medium"
+                  onClick={onStartSimulation}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-medium transition-colors"
+                  title="Simulate scanning a flat surface with circle indicator and click-to-spawn"
                 >
-                  <Glasses className="w-3.5 h-3.5" />
-                  <span>How to use WebXR AR/VR on mobile & headset</span>
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Preview AR Tap-to-Spawn</span>
                 </button>
-                <button
-                  onClick={onOpenSpecs}
-                  className="inline-flex items-center gap-1.5 text-amber-400 hover:text-amber-300 font-medium"
-                >
-                  <Info className="w-3.5 h-3.5" />
-                  <span>Dimension Drawings</span>
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={onOpenXRGuide}
+                    className="inline-flex items-center gap-1.5 text-sky-400 hover:text-sky-300 font-medium"
+                  >
+                    <Glasses className="w-3.5 h-3.5" />
+                    <span>WebXR Setup & QR</span>
+                  </button>
+                  <button
+                    onClick={onOpenSpecs}
+                    className="inline-flex items-center gap-1.5 text-amber-400 hover:text-amber-300 font-medium"
+                  >
+                    <Info className="w-3.5 h-3.5" />
+                    <span>Specs</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
