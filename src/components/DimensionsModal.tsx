@@ -20,45 +20,45 @@ export function DimensionsModal({
   const currentLeg = LEG_OPTIONS[legKey];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-[2px]">
       <div 
-        className="relative w-full max-w-xl rounded-2xl bg-[#1C1F24] border border-[#2F3540] text-gray-100 shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl bg-[#1C1F24] border border-[#2F3540] text-gray-100 shadow-2xl p-4 sm:p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#2C323C]">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-[#272D36] text-amber-400">
-              <Ruler className="w-5 h-5" />
+        <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#2C323C] shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 rounded-lg bg-[#272D36] text-amber-400 shrink-0">
+              <Ruler className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 id="modal-title" className="text-lg font-semibold tracking-tight text-white">
-                Technical Specifications & Dimensions
+            <div className="min-w-0">
+              <h2 id="modal-title" className="text-base sm:text-lg font-semibold tracking-tight text-white truncate">
+                Technical Specifications
               </h2>
-              <p className="text-xs text-gray-400">
+              <p className="text-[11px] sm:text-xs text-gray-400 truncate">
                 Architectural Lounge Chair Model 01
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2C323C] transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2C323C] transition-colors shrink-0"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content Body */}
-        <div className="py-5 space-y-6 text-sm">
+        {/* Content Body (Scrollable on small mobile screens) */}
+        <div className="py-4 sm:py-5 space-y-4 sm:space-y-6 text-sm overflow-y-auto flex-1">
           {/* Dimension Grid */}
           <div>
-            <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-3">
+            <h3 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2 sm:mb-3">
               Ergonomic Dimensions
             </h3>
-            <div className="grid grid-cols-4 gap-2.5 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
               <div className="p-3 rounded-xl bg-[#23272F] border border-[#2F3540]">
                 <div className="text-xs text-gray-400">Overall Width</div>
                 <div className="text-base font-semibold text-white mt-1">78 cm</div>

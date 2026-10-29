@@ -109,8 +109,10 @@ export function initChairScene(
   scene.environment = envTexture;
   pmremGenerator.dispose();
 
-  // 5. Camera Setup
-  const camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 50);
+  // 5. Camera Setup (responsive FOV: 48° on mobile portrait to fit chair & labels comfortably, 38° on desktop)
+  const initialAspect = width / height;
+  const initialFov = initialAspect < 1 ? 48 : 38;
+  const camera = new THREE.PerspectiveCamera(initialFov, initialAspect, 0.1, 50);
   camera.position.set(1.9, 1.3, 2.3);
 
   // 6. Camera Controls (OrbitControls)
@@ -121,6 +123,10 @@ export function initChairScene(
   controls.minDistance = 0.7;
   controls.maxDistance = 6.0;
   controls.maxPolarAngle = Math.PI / 2 - 0.02; // Prevent going underneath floor
+  controls.touches = {
+    ONE: THREE.TOUCH.ROTATE,
+    TWO: THREE.TOUCH.DOLLY_PAN,
+  };
   controls.update();
 
   // 7. Studio 3-Point Lighting Rig
@@ -478,7 +484,9 @@ export function initChairScene(
   renderer.setAnimationLoop(renderLoop);
 
   function handleResize(newWidth: number, newHeight: number) {
-    camera.aspect = newWidth / newHeight;
+    const aspect = newWidth / newHeight;
+    camera.aspect = aspect;
+    camera.fov = aspect < 1 ? 48 : 38;
     camera.updateProjectionMatrix();
     renderer.setSize(newWidth, newHeight);
   }

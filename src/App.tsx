@@ -259,7 +259,7 @@ export default function App() {
       {/* Isolated Three.js WebGL canvas mount container */}
       <div
         ref={mountRef}
-        className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
+        className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing touch-none select-none"
       />
 
       {/* WebXR / Camera AR DOM Overlay container */}

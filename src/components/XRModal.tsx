@@ -26,31 +26,31 @@ export function XRModal({
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(shareUrl)}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-[2px]">
       <div 
-        className="relative w-full max-w-lg rounded-2xl bg-[#1C1F24] border border-[#2F3540] text-gray-100 shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="relative w-full max-w-lg max-h-[90vh] flex flex-col rounded-2xl bg-[#1C1F24] border border-[#2F3540] text-gray-100 shadow-2xl p-4 sm:p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
         role="dialog"
         aria-modal="true"
         aria-labelledby="xr-modal-title"
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#2C323C]">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-[#272D36] text-sky-400">
-              <Glasses className="w-5 h-5" />
+        <div className="flex items-center justify-between pb-3 sm:pb-4 border-b border-[#2C323C] shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="p-2 rounded-lg bg-[#272D36] text-sky-400 shrink-0">
+              <Glasses className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 id="xr-modal-title" className="text-lg font-semibold tracking-tight text-white">
+            <div className="min-w-0">
+              <h2 id="xr-modal-title" className="text-base sm:text-lg font-semibold tracking-tight text-white truncate">
                 WebXR Spatial Experience
               </h2>
-              <p className="text-xs text-gray-400">
-                Augmented Reality & Virtual Reality Showroom
+              <p className="text-[11px] sm:text-xs text-gray-400 truncate">
+                Augmented & Virtual Reality Showroom
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2C323C] transition-colors"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2C323C] transition-colors shrink-0"
             aria-label="Close dialog"
           >
             <X className="w-5 h-5" />
@@ -58,19 +58,19 @@ export function XRModal({
         </div>
 
         {/* Content */}
-        <div className="py-5 space-y-5 text-sm">
+        <div className="py-3 sm:py-5 space-y-4 sm:space-y-5 text-sm overflow-y-auto flex-1">
           {errorMessage && (
-            <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/50 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="p-3 sm:p-3.5 rounded-xl bg-amber-950/40 border border-amber-800/50 flex items-start gap-2.5 sm:gap-3">
+              <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400 shrink-0 mt-0.5" />
               <div className="text-xs text-amber-200">
-                <p className="font-medium text-amber-300">WebXR Device Check</p>
+                <p className="font-medium text-amber-300">Device & Browser Status</p>
                 <p className="mt-0.5">{errorMessage}</p>
               </div>
             </div>
           )}
 
           {/* Device Options Grid */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-4 rounded-xl bg-[#23272F] border border-[#2F3540] flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 text-white font-medium mb-1">
@@ -126,8 +126,8 @@ export function XRModal({
           </div>
 
           {/* QR Code for Mobile scanning */}
-          <div className="p-4 rounded-xl bg-[#23272F] border border-[#2F3540] flex items-center gap-4">
-            <div className="w-24 h-24 bg-white rounded-lg p-1.5 shrink-0 flex items-center justify-center">
+          <div className="p-3 sm:p-4 rounded-xl bg-[#23272F] border border-[#2F3540] flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-4 text-center sm:text-left">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-white rounded-lg p-1.5 shrink-0 flex items-center justify-center">
               <img
                 src={qrCodeUrl}
                 alt="Scan to open on mobile"
@@ -137,10 +137,10 @@ export function XRModal({
             </div>
             <div className="flex-1">
               <div className="text-xs font-semibold text-white">Scan with Mobile Phone</div>
-              <p className="text-xs text-gray-400 mt-1 leading-relaxed">
-                Open on Chrome for Android or WebXR-enabled mobile browser to see the chair right in your living room.
+              <p className="text-[11px] sm:text-xs text-gray-400 mt-1 leading-relaxed">
+                Open on Chrome for Android or iOS Safari to test AR right in your living room.
               </p>
-              <div className="mt-2 flex items-center gap-2">
+              <div className="mt-2 flex items-center justify-center sm:justify-start gap-2">
                 <a
                   href={shareUrl}
                   target="_blank"
