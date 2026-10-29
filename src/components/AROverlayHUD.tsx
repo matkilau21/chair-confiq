@@ -28,8 +28,24 @@ export function AROverlayHUD({
 }: AROverlayHUDProps) {
   return (
     <div className="fixed inset-0 pointer-events-none z-50 flex flex-col justify-between p-4 sm:p-6 select-none">
+      {/* Fullscreen touch layer to spawn/reposition chair on any screen tap */}
+      <div 
+        className="absolute inset-0 pointer-events-auto cursor-pointer"
+        onClick={(e) => {
+          // If click was not on a button, trigger spawn/reposition
+          if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+            onSpawnClick();
+          }
+        }}
+        onTouchStart={(e) => {
+          if ((e.target as HTMLElement).tagName !== 'BUTTON') {
+            onSpawnClick();
+          }
+        }}
+      />
+
       {/* Top Banner with mode indicator & exit button */}
-      <div className="flex items-center justify-between w-full max-w-lg mx-auto">
+      <div className="relative z-10 flex items-center justify-between w-full max-w-lg mx-auto">
         <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 border border-white/20 text-white text-xs font-medium backdrop-blur-md shadow-lg">
           <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
           <span>{isSimulation ? 'AR Floor Tap Preview' : 'AR Mode (iOS & Android)'}</span>
@@ -99,7 +115,7 @@ export function AROverlayHUD({
       </div>
 
       {/* Bottom Controls Bar (when chair is placed or ready) */}
-      <div className="pointer-events-auto flex flex-col items-center gap-3 w-full max-w-md mx-auto mb-2">
+      <div className="relative z-10 pointer-events-auto flex flex-col items-center gap-3 w-full max-w-md mx-auto mb-2">
         {status === 'placed' && (
           <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-black/80 border border-white/20 text-white text-xs font-medium backdrop-blur-md shadow-lg">
             <Check className="w-4 h-4 text-emerald-400" />

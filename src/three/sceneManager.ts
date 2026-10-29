@@ -151,6 +151,15 @@ export function initChairScene(
   frontFill.position.set(0, 1.5, 3.0);
   scene.add(frontFill);
 
+  // Dedicated AR & ambient illumination so chair is vibrant in any room/camera view
+  const arAmbientLight = new THREE.AmbientLight(0xFFFFFF, 1.4);
+  scene.add(arAmbientLight);
+
+  const cameraFillLight = new THREE.DirectionalLight(0xFFFFFF, 1.2);
+  cameraFillLight.position.set(0, 1.2, 0.8);
+  camera.add(cameraFillLight);
+  scene.add(camera);
+
   // 8. Ground Floor & Grounding Contact Shadows
   const floorGroup = new THREE.Group();
   floorGroup.name = 'FloorGroup';
@@ -225,16 +234,31 @@ export function initChairScene(
     }
   }
 
-  // Spawn chair at reticle position
-  function spawnChairAtReticle(): boolean {
-    if (!reticle.group.visible) return false;
-
-    // Set position from reticle matrix
-    chair.group.position.setFromMatrixPosition(reticle.group.matrix);
-
-    // Make chair face camera
+  // Spawn or reposition chair at reticle position or 1.4m ahead
+  function spawnChairAtReticle(forcedPos?: THREE.Vector3): boolean {
+    const xrCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
     const camPos = new THREE.Vector3();
-    camera.getWorldPosition(camPos);
+    xrCam.getWorldPosition(camPos);
+
+    let spawnPos: THREE.Vector3;
+    if (forcedPos) {
+      spawnPos = forcedPos.clone();
+    } else if (reticle.group.visible) {
+      spawnPos = new THREE.Vector3().setFromMatrixPosition(reticle.group.matrix);
+    } else {
+      // Calculate position 1.4m directly in front of camera at ground level
+      const forward = new THREE.Vector3(0, 0, -1.4).applyQuaternion(xrCam.quaternion);
+      spawnPos = new THREE.Vector3(
+        camPos.x + forward.x,
+        0.04,
+        camPos.z + forward.z
+      );
+    }
+
+    // Set position & ensure proper Y ground elevation
+    chair.group.position.set(spawnPos.x, 0.04, spawnPos.z);
+
+    // Make chair face user/camera
     const dx = camPos.x - chair.group.position.x;
     const dz = camPos.z - chair.group.position.z;
     if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
@@ -242,15 +266,14 @@ export function initChairScene(
     }
 
     // Ground contact shadow under chair in AR
-    shadowMesh.position.x = chair.group.position.x;
-    shadowMesh.position.z = chair.group.position.z + 0.03;
+    shadowMesh.position.set(chair.group.position.x, 0.002, chair.group.position.z + 0.03);
     shadowMesh.visible = true;
 
-    // Visual spawn pop animation
+    // Visual spawn & full scale
     chair.group.visible = true;
     chairSpawned = true;
-    currentChairScale = 0.15;
-    chair.group.scale.set(0.15, 0.15, 0.15);
+    chair.group.scale.set(1.0, 1.0, 1.0);
+    currentChairScale = 1.0;
 
     // Play reticle ripple shockwave
     reticle.triggerSpawnEffect(chair.group.position);
@@ -260,9 +283,11 @@ export function initChairScene(
   }
 
   function resetARPlacement() {
-    chairSpawned = false;
-    chair.group.visible = false;
-    updateARStatus('scanning');
+    chairSpawned = true;
+    chair.group.visible = true;
+    chair.group.position.set(0, 0.04, -1.4);
+    shadowMesh.position.set(0, 0.002, -1.37);
+    updateARStatus('placed');
   }
 
   // WebXR Controller Event Handler
@@ -470,19 +495,26 @@ export function initChairScene(
       scene.fog = null; // disable fog so video is crisp
 
       floorMesh.visible = false;
-      shadowMesh.visible = false;
+      shadowMesh.visible = true;
 
-      // Chair starts hidden until user scans and taps screen to spawn!
-      chair.group.visible = false;
-      chairSpawned = false;
+      // Chair is immediately visible in front of user in AR mode!
+      chair.group.position.set(0, 0.04, -1.4);
+      chair.group.rotation.set(0, 0, 0);
+      chair.group.scale.set(1, 1, 1);
+      chair.group.visible = true;
+      chairSpawned = true;
+      shadowMesh.position.set(0, 0.002, -1.37);
       isCameraARActive = true;
 
-      // Camera preset for AR eye-level
-      camera.position.set(0, 1.2, 1.8);
-      controls.target.set(0, 0.4, -0.5);
+      // Camera preset for AR eye-level looking at chair
+      camera.position.set(0, 0.9, 0.5);
+      controls.target.set(0, 0.45, -1.4);
       controls.update();
 
-      updateARStatus('ready');
+      reticle.group.visible = true;
+      reticle.group.matrix.makeTranslation(0, 0.002, -1.4);
+
+      updateARStatus('placed');
       callbacks?.onCameraARStart?.();
     } catch (err) {
       console.error('Failed to start camera AR', err);
@@ -548,9 +580,16 @@ export function initChairScene(
 
     startSimulationMode: () => {
       isSimulatingAR = true;
-      chairSpawned = false;
-      chair.group.visible = false;
-      updateARStatus('scanning');
+      chairSpawned = true;
+      chair.group.visible = true;
+      chair.group.position.set(0, 0.04, -1.4);
+      chair.group.rotation.set(0, 0, 0);
+      chair.group.scale.set(1, 1, 1);
+      shadowMesh.visible = true;
+      shadowMesh.position.set(0, 0.002, -1.37);
+      reticle.group.visible = true;
+      reticle.group.matrix.makeTranslation(0, 0.002, -1.4);
+      updateARStatus('placed');
     },
 
     stopSimulationMode: () => {
@@ -613,10 +652,20 @@ export function initChairScene(
             await renderer.xr.setSession(session);
             scene.background = null;
             floorMesh.visible = false;
-            shadowMesh.visible = false;
-            chair.group.visible = false;
-            chairSpawned = false;
-            updateARStatus('scanning');
+            shadowMesh.visible = true;
+            shadowMesh.position.set(0, 0.002, -1.37);
+
+            // Chair is immediately visible in front of user in AR!
+            chair.group.position.set(0, 0.04, -1.4);
+            chair.group.rotation.set(0, 0, 0);
+            chair.group.scale.set(1, 1, 1);
+            chair.group.visible = true;
+            chairSpawned = true;
+
+            reticle.group.visible = true;
+            reticle.group.matrix.makeTranslation(0, 0.002, -1.4);
+
+            updateARStatus('placed');
             callbacks?.onXRSessionStart?.('immersive-ar');
             return 'webxr';
           }
@@ -704,11 +753,20 @@ export function initChairScene(
         if (mode === 'immersive-ar') {
           scene.background = null;
           floorMesh.visible = false;
-          shadowMesh.visible = false;
+          shadowMesh.visible = true;
+          shadowMesh.position.set(0, 0.002, -1.37);
 
-          chair.group.visible = false;
-          chairSpawned = false;
-          updateARStatus('scanning');
+          // Position chair 1.4m ahead at 1:1 scale so it appears immediately
+          chair.group.position.set(0, 0.04, -1.4);
+          chair.group.rotation.set(0, 0, 0);
+          chair.group.scale.set(1, 1, 1);
+          chair.group.visible = true;
+          chairSpawned = true;
+
+          reticle.group.visible = true;
+          reticle.group.matrix.makeTranslation(0, 0.002, -1.4);
+
+          updateARStatus('placed');
         } else {
           scene.background = floorBgColor;
           floorGroup.visible = true;

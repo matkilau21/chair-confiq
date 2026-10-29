@@ -210,10 +210,17 @@ export function createChairLabels(
     update: (camera: THREE.Camera) => {
       if (!isLabelsVisible) return;
 
-      // Ensure the hero billboard always directly faces the camera view
-      heroBadgeMesh.quaternion.copy(camera.quaternion);
+      // Ensure the hero billboard always directly faces the camera view in world coordinates
+      const camWorldQuat = new THREE.Quaternion();
+      camera.getWorldQuaternion(camWorldQuat);
 
-      // THREE.Sprite automatically faces the camera, but we ensure group stability
+      if (heroBadgeMesh.parent) {
+        const parentWorldQuat = new THREE.Quaternion();
+        heroBadgeMesh.parent.getWorldQuaternion(parentWorldQuat);
+        heroBadgeMesh.quaternion.copy(parentWorldQuat.invert().multiply(camWorldQuat));
+      } else {
+        heroBadgeMesh.quaternion.copy(camWorldQuat);
+      }
     },
 
     updateSpecs: (newFabric: FabricColorKey, newLeg: LegMaterialKey) => {

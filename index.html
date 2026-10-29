@@ -3,6 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function() {
+        try {
+          var rawFetch = window.fetch;
+          var _currentFetch = rawFetch ? rawFetch.bind(window) : undefined;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return _currentFetch;
+            },
+            set: function(newFetch) {
+              _currentFetch = newFetch;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          try {
+            var proto = Object.getPrototypeOf(window);
+            if (proto && Object.getOwnPropertyDescriptor(proto, 'fetch')) {
+              Object.defineProperty(proto, 'fetch', {
+                get: function() {
+                  return _currentFetch;
+                },
+                set: function(newFetch) {
+                  _currentFetch = newFetch;
+                },
+                configurable: true,
+                enumerable: true
+              });
+            }
+          } catch (err) {}
+        }
+      })();
+    </script>
     <title>3D Lounge Chair Configurator & WebXR</title>
     <meta name="description" content="Interactive 3D lounge chair configurator with WebXR support, fabric color customizer, wood and metal base selector, and studio lighting." />
     <meta property="og:title" content="3D Lounge Chair Configurator & WebXR" />
