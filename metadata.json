@@ -1,0 +1,6 @@
+{
+  "name": "3D Lounge Chair Configurator & WebXR",
+  "description": "Interactive 3D lounge chair configurator with WebXR support, fabric color customizer, wood and metal base selector, and studio lighting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
