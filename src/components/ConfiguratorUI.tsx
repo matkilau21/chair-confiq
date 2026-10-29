@@ -13,6 +13,7 @@ import {
   Info,
   Maximize2,
   Sparkles,
+  Tag,
 } from 'lucide-react';
 import {
   FabricColorKey,
@@ -41,6 +42,8 @@ interface ConfiguratorUIProps {
   onOpenSpecs: () => void;
   onOpenXRGuide: () => void;
   onStartSimulation: () => void;
+  showLabels: boolean;
+  onToggleLabels: () => void;
 }
 
 export function ConfiguratorUI({
@@ -62,6 +65,8 @@ export function ConfiguratorUI({
   onOpenSpecs,
   onOpenXRGuide,
   onStartSimulation,
+  showLabels,
+  onToggleLabels,
 }: ConfiguratorUIProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<'materials' | 'camera' | 'inspect'>('materials');
@@ -99,10 +104,24 @@ export function ConfiguratorUI({
         </div>
 
         {/* Top Right Quick Actions */}
-        <div className="flex items-center gap-2 bg-[#181B20]/90 border border-[#2B313C] rounded-2xl p-1.5 shadow-lg">
+        <div className="flex items-center gap-1.5 sm:gap-2 bg-[#181B20]/90 border border-[#2B313C] rounded-2xl p-1.5 shadow-lg">
+          {/* Label following camera view toggle */}
+          <button
+            onClick={onToggleLabels}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+              showLabels
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'text-gray-400 hover:text-white hover:bg-[#262B35]'
+            }`}
+            title="Toggle floating camera-following label and feature hotspots"
+          >
+            <Tag className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{showLabels ? 'Labels On' : 'Labels Off'}</span>
+          </button>
+
           <button
             onClick={onOpenSpecs}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white hover:bg-[#262B35] transition-colors"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white hover:bg-[#262B35] transition-colors"
             title="View technical dimensions & specifications"
           >
             <Info className="w-3.5 h-3.5 text-amber-400" />
@@ -111,7 +130,7 @@ export function ConfiguratorUI({
 
           <button
             onClick={onTakeScreenshot}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white hover:bg-[#262B35] transition-colors"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium text-gray-300 hover:text-white hover:bg-[#262B35] transition-colors"
             title="Download high-resolution image"
           >
             <Download className="w-3.5 h-3.5 text-gray-400" />
@@ -120,14 +139,15 @@ export function ConfiguratorUI({
 
           <div className="h-4 w-[1px] bg-[#2E3440] mx-0.5" />
 
-          {/* WebXR Triggers */}
+          {/* Universal AR (iOS & Android) Trigger */}
           <button
             onClick={onLaunchAR}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-600 hover:bg-emerald-500 text-white transition-colors shadow-sm"
-            title="View in your room with WebXR AR"
+            title="Launch AR on Android (Chrome/ARCore) and iOS (iPhone/iPad Safari)"
           >
             <Smartphone className="w-3.5 h-3.5" />
             <span>AR Mode</span>
+            <span className="hidden md:inline text-[9px] px-1 py-0.2 rounded bg-black/30 font-mono">iOS & Android</span>
           </button>
 
           <button

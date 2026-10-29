@@ -9,26 +9,38 @@ import {
 } from './chairBuilder';
 import { createContactShadowTexture } from './proceduralTextures';
 import { createARReticle, ARReticle } from './reticle';
+import { createChairLabels, ChairLabelsController } from './chairLabels';
+import { startDeviceCameraAR, CameraARSession, isIOSDevice, isAndroidDevice } from './cameraARManager';
 
 export type CameraPreset = 'studio' | 'front' | 'side' | 'top' | 'detail';
 export type ARPlacementStatus = 'scanning' | 'ready' | 'placed';
+export type ARModeType = 'webxr' | 'camera' | 'simulation';
 
 export interface SceneCallbacks {
   onXRSessionStart?: (mode: 'immersive-ar' | 'immersive-vr') => void;
   onXRSessionEnd?: () => void;
   onARStatusChange?: (status: ARPlacementStatus) => void;
+  onCameraARStart?: () => void;
+  onCameraAREnd?: () => void;
 }
 
 export interface ChairSceneManager {
   domElement: HTMLCanvasElement;
   chair: ChairController;
+  labels: ChairLabelsController;
   setCameraPreset: (preset: CameraPreset) => void;
   toggleAutoRotate: (enabled: boolean) => void;
   setExposure: (val: number) => void;
+  toggleLabels: (visible?: boolean) => boolean;
+  areLabelsVisible: () => boolean;
   startXRSession: (mode: 'immersive-ar' | 'immersive-vr', overlayElement?: HTMLElement) => Promise<void>;
   endXRSession: () => Promise<void>;
+  startCameraARMode: () => Promise<void>;
+  stopCameraARMode: () => void;
+  launchUniversalAR: (overlayElement?: HTMLElement) => Promise<ARModeType>;
   isXRSupported: (mode: 'immersive-ar' | 'immersive-vr') => Promise<boolean>;
   isSessionActive: () => boolean;
+  isCameraARActive: () => boolean;
   spawnChairAtReticle: () => boolean;
   resetARPlacement: () => void;
   startSimulationMode: () => void;
@@ -172,9 +184,14 @@ export function initChairScene(
   shadowMesh.position.set(0, 0.002, 0.03);
   floorGroup.add(shadowMesh);
 
-  // 9. Create the Lounge Chair
+  // 9. Create the Lounge Chair & Camera-Following Labels
   const chair = createLoungeChair();
   scene.add(chair.group);
+
+  let activeFabricKey: FabricColorKey = 'terracotta';
+  let activeLegKey: LegMaterialKey = 'wood';
+  const chairLabels = createChairLabels(activeFabricKey, activeLegKey);
+  chair.group.add(chairLabels.group);
 
   // 10. WebXR AR Circle Indicator (Reticle) & Placement State
   const reticle = createARReticle();
@@ -191,7 +208,12 @@ export function initChairScene(
   let targetChairScale = 1.0;
   let currentChairScale = 1.0;
 
-  // Simulation mode (allows previewing floor scanning and tap-to-spawn on desktop)
+  // Camera AR Passthrough State (for 100% Android & iOS Safari support)
+  let cameraARSession: CameraARSession | null = null;
+  let cameraVideoTexture: THREE.VideoTexture | null = null;
+  let isCameraARActive = false;
+
+  // Desktop Simulation mode state
   let isSimulatingAR = false;
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -258,9 +280,9 @@ export function initChairScene(
   controller2.addEventListener('select', onXRSelect);
   scene.add(controller2);
 
-  // Screen click/touch handler for WebXR DOM overlay or canvas touch
+  // Screen click/touch handler for WebXR DOM overlay, Camera AR, or canvas touch
   function handleCanvasClick(e: MouseEvent | TouchEvent) {
-    if (activeXRMode === 'immersive-ar' || isSimulatingAR) {
+    if (activeXRMode === 'immersive-ar' || isCameraARActive || isSimulatingAR) {
       spawnChairAtReticle();
     }
   }
@@ -342,6 +364,9 @@ export function initChairScene(
     // Update chair sub-assemblies (exploded view)
     chair.updateAnimation(delta);
 
+    // Make sure chair labels ALWAYS follow the camera view
+    chairLabels.update(camera);
+
     // Update AR circle indicator animation
     reticle.update(delta);
 
@@ -349,6 +374,19 @@ export function initChairScene(
     if (chairSpawned && currentChairScale < targetChairScale - 0.005) {
       currentChairScale = THREE.MathUtils.damp(currentChairScale, targetChairScale, 12, delta);
       chair.group.scale.set(currentChairScale, currentChairScale, currentChairScale);
+    }
+
+    // Camera AR Mode Reticle Alignment (Android & iOS)
+    if (isCameraARActive && !chairSpawned) {
+      // Place reticle 1.5m in front of camera on ground level
+      const dir = new THREE.Vector3(0, 0, -1.6).applyQuaternion(camera.quaternion);
+      reticle.group.visible = true;
+      reticle.group.matrix.makeTranslation(
+        camera.position.x + dir.x,
+        0.002,
+        camera.position.z + dir.z
+      );
+      updateARStatus('ready');
     }
 
     // WebXR Hit-Testing in AR mode
@@ -387,7 +425,7 @@ export function initChairScene(
     }
 
     // Turntable auto rotation when in regular studio mode
-    if (!renderer.xr.isPresenting && !isSimulatingAR && autoRotateSpeed > 0 && !isTransitioningCamera) {
+    if (!renderer.xr.isPresenting && !isCameraARActive && !isSimulatingAR && autoRotateSpeed > 0 && !isTransitioningCamera) {
       chair.group.rotation.y += autoRotateSpeed * delta;
     }
 
@@ -420,9 +458,72 @@ export function initChairScene(
     renderer.setSize(newWidth, newHeight);
   }
 
+  // Camera AR Passthrough implementation for iOS & Android
+  async function startCameraARMode(): Promise<void> {
+    try {
+      const session = await startDeviceCameraAR();
+      cameraARSession = session;
+
+      cameraVideoTexture = new THREE.VideoTexture(session.video);
+      cameraVideoTexture.colorSpace = THREE.SRGBColorSpace;
+      scene.background = cameraVideoTexture;
+      scene.fog = null; // disable fog so video is crisp
+
+      floorMesh.visible = false;
+      shadowMesh.visible = false;
+
+      // Chair starts hidden until user scans and taps screen to spawn!
+      chair.group.visible = false;
+      chairSpawned = false;
+      isCameraARActive = true;
+
+      // Camera preset for AR eye-level
+      camera.position.set(0, 1.2, 1.8);
+      controls.target.set(0, 0.4, -0.5);
+      controls.update();
+
+      updateARStatus('ready');
+      callbacks?.onCameraARStart?.();
+    } catch (err) {
+      console.error('Failed to start camera AR', err);
+      throw err;
+    }
+  }
+
+  function stopCameraARMode(): void {
+    if (cameraARSession) {
+      cameraARSession.stop();
+      cameraARSession = null;
+    }
+    if (cameraVideoTexture) {
+      cameraVideoTexture.dispose();
+      cameraVideoTexture = null;
+    }
+    isCameraARActive = false;
+    chairSpawned = true;
+
+    // Restore normal studio scene
+    scene.background = floorBgColor;
+    scene.fog = new THREE.Fog(0xE4E7EB, 4.5, 16);
+    floorMesh.visible = true;
+    shadowMesh.visible = true;
+    shadowMesh.position.set(0, 0.002, 0.03);
+
+    chair.group.visible = true;
+    chair.group.position.set(0, 0, 0);
+    chair.group.rotation.set(0, 0, 0);
+    chair.group.scale.set(1, 1, 1);
+    reticle.group.visible = false;
+
+    // Reset camera to standard studio preset
+    setCameraPreset('studio');
+    callbacks?.onCameraAREnd?.();
+  }
+
   return {
     domElement: renderer.domElement,
     chair,
+    labels: chairLabels,
 
     setCameraPreset,
 
@@ -433,6 +534,14 @@ export function initChairScene(
     setExposure: (val: number) => {
       renderer.toneMappingExposure = val;
     },
+
+    toggleLabels: (visible?: boolean) => {
+      const next = visible !== undefined ? visible : !chairLabels.isVisible();
+      chairLabels.setVisible(next);
+      return next;
+    },
+
+    areLabelsVisible: () => chairLabels.isVisible(),
 
     spawnChairAtReticle,
     resetARPlacement,
@@ -457,6 +566,83 @@ export function initChairScene(
     },
 
     isSimulationActive: () => isSimulatingAR,
+
+    startCameraARMode,
+    stopCameraARMode,
+    isCameraARActive: () => isCameraARActive,
+
+    // Universal AR Launcher (Selects WebXR on Android Chrome / Quest, or Camera AR on iOS Safari & fallback)
+    launchUniversalAR: async (overlayElement?: HTMLElement): Promise<ARModeType> => {
+      // 1. Try WebXR immersive-ar first (supported by Android Chrome ARCore, Quest, Vision Pro)
+      if ('xr' in navigator && navigator.xr) {
+        try {
+          const supported = await navigator.xr.isSessionSupported('immersive-ar');
+          if (supported) {
+            const sessionOptions: XRSessionInit = {
+              requiredFeatures: ['local-floor'],
+              optionalFeatures: ['hit-test', 'dom-overlay', 'bounded-floor'],
+            };
+            if (overlayElement) {
+              sessionOptions.domOverlay = { root: overlayElement };
+            }
+            const session = await navigator.xr.requestSession('immersive-ar', sessionOptions);
+            currentXRSession = session;
+            activeXRMode = 'immersive-ar';
+
+            session.addEventListener('end', () => {
+              currentXRSession = null;
+              activeXRMode = null;
+              hitTestSource = null;
+              hitTestSourceRequested = false;
+              reticle.group.visible = false;
+
+              scene.background = floorBgColor;
+              floorGroup.visible = true;
+              floorMesh.visible = true;
+              shadowMesh.visible = true;
+              shadowMesh.position.set(0, 0.002, 0.03);
+              chair.group.visible = true;
+              chair.group.position.set(0, 0, 0);
+              chair.group.rotation.set(0, 0, 0);
+              chair.group.scale.set(1, 1, 1);
+              chairSpawned = true;
+
+              callbacks?.onXRSessionEnd?.();
+            });
+
+            await renderer.xr.setSession(session);
+            scene.background = null;
+            floorMesh.visible = false;
+            shadowMesh.visible = false;
+            chair.group.visible = false;
+            chairSpawned = false;
+            updateARStatus('scanning');
+            callbacks?.onXRSessionStart?.('immersive-ar');
+            return 'webxr';
+          }
+        } catch {
+          // Fall through to camera AR
+        }
+      }
+
+      // 2. Fall back to Camera AR Passthrough (works on 100% of iOS Safari & Android mobile browsers)
+      if (typeof navigator.mediaDevices?.getUserMedia === 'function') {
+        try {
+          await startCameraARMode();
+          return 'camera';
+        } catch (err) {
+          // If camera permission denied or unavailable on desktop, launch simulation mode
+          console.warn('Camera AR unavailable, falling back to simulation', err);
+        }
+      }
+
+      // 3. Fallback to interactive simulation
+      isSimulatingAR = true;
+      chairSpawned = false;
+      chair.group.visible = false;
+      updateARStatus('scanning');
+      return 'simulation';
+    },
 
     isXRSupported: async (mode: 'immersive-ar' | 'immersive-vr'): Promise<boolean> => {
       if (!('xr' in navigator) || !navigator.xr) return false;
@@ -499,7 +685,6 @@ export function initChairScene(
           hitTestSourceRequested = false;
           reticle.group.visible = false;
 
-          // Restore normal studio scene
           scene.background = floorBgColor;
           floorGroup.visible = true;
           floorMesh.visible = true;
@@ -517,17 +702,14 @@ export function initChairScene(
         await renderer.xr.setSession(session);
 
         if (mode === 'immersive-ar') {
-          // Transparent background so camera passthrough is visible
           scene.background = null;
           floorMesh.visible = false;
-          shadowMesh.visible = false; // will show once chair is placed
+          shadowMesh.visible = false;
 
-          // Chair starts hidden until user scans floor and clicks to spawn!
           chair.group.visible = false;
           chairSpawned = false;
           updateARStatus('scanning');
         } else {
-          // Immersive VR showroom
           scene.background = floorBgColor;
           floorGroup.visible = true;
           floorMesh.visible = true;
@@ -562,10 +744,17 @@ export function initChairScene(
       if (currentXRSession) {
         currentXRSession.end().catch(() => {});
       }
+      if (cameraARSession) {
+        cameraARSession.stop();
+      }
+      if (cameraVideoTexture) {
+        cameraVideoTexture.dispose();
+      }
       window.removeEventListener('pointermove', handlePointerMove);
       renderer.domElement.removeEventListener('click', handleCanvasClick);
       controls.dispose();
       chair.dispose();
+      chairLabels.dispose();
       reticle.dispose();
       contactShadowTex.dispose();
       floorMat.dispose();

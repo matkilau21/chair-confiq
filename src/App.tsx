@@ -23,11 +23,13 @@ export default function App() {
   const [autoRotate, setAutoRotate] = useState<boolean>(false);
   const [explodedFactor, setExplodedFactor] = useState<number>(0);
   const [isBrightLighting, setIsBrightLighting] = useState<boolean>(false);
+  const [showLabels, setShowLabels] = useState<boolean>(true);
 
   // AR & WebXR state
   const [inXRSession, setInXRSession] = useState<boolean>(false);
   const [xrMode, setXrMode] = useState<'immersive-ar' | 'immersive-vr' | null>(null);
   const [arStatus, setArStatus] = useState<ARPlacementStatus>('scanning');
+  const [isCameraARActive, setIsCameraARActive] = useState<boolean>(false);
   const [isSimulatingAR, setIsSimulatingAR] = useState<boolean>(false);
 
   // Modals
@@ -48,6 +50,12 @@ export default function App() {
         setInXRSession(false);
         setXrMode(null);
         setIsSimulatingAR(false);
+      },
+      onCameraARStart: () => {
+        setIsCameraARActive(true);
+      },
+      onCameraAREnd: () => {
+        setIsCameraARActive(false);
       },
       onARStatusChange: (status) => {
         setArStatus(status);
@@ -77,6 +85,8 @@ export default function App() {
         handleLegChange('wood');
       } else if (e.key.toLowerCase() === 'm') {
         handleLegChange('metal');
+      } else if (e.key.toLowerCase() === 'l') {
+        handleToggleLabels();
       } else if (e.key.toLowerCase() === 'r') {
         setAutoRotate(prev => {
           const next = !prev;
@@ -88,6 +98,10 @@ export default function App() {
           manager.stopSimulationMode();
           setIsSimulatingAR(false);
         }
+        if (isCameraARActive) {
+          manager.stopCameraARMode();
+          setIsCameraARActive(false);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -98,17 +112,24 @@ export default function App() {
       manager.dispose();
       sceneManagerRef.current = null;
     };
-  }, [isSimulatingAR]);
+  }, []);
 
   // Handlers for state updates with direct Three.js scene binding
   const handleFabricChange = useCallback((key: FabricColorKey) => {
     setFabricKey(key);
     sceneManagerRef.current?.chair.setFabricColor(key);
-  }, []);
+    sceneManagerRef.current?.labels.updateSpecs(key, legKey);
+  }, [legKey]);
 
   const handleLegChange = useCallback((key: LegMaterialKey) => {
     setLegKey(key);
     sceneManagerRef.current?.chair.setLegMaterial(key);
+    sceneManagerRef.current?.labels.updateSpecs(fabricKey, key);
+  }, [fabricKey]);
+
+  const handleToggleLabels = useCallback(() => {
+    const next = sceneManagerRef.current?.toggleLabels();
+    setShowLabels(!!next);
   }, []);
 
   const handleCameraPresetChange = useCallback((preset: CameraPreset) => {
@@ -153,28 +174,26 @@ export default function App() {
     }
   }, [fabricKey, legKey]);
 
-  // AR & VR Launch Handlers
+  // Universal AR Launch Handler (Supports Android Chrome ARCore & iOS iPhone/iPad Safari)
   const handleLaunchAR = useCallback(async () => {
     setXRErrorMessage(null);
     if (!sceneManagerRef.current) return;
 
-    const isSupported = await sceneManagerRef.current.isXRSupported('immersive-ar');
-    if (!isSupported) {
-      setXRErrorMessage(
-        'Immersive AR is not detected on your current desktop browser. You can click "Preview Tap-to-Spawn in Browser" below to test the floor detection circle and click-to-spawn immediately, or scan the QR code to open on your Android/iOS device!'
-      );
-      setIsXRModalOpen(true);
-      return;
-    }
-
     try {
-      await sceneManagerRef.current.startXRSession(
-        'immersive-ar',
+      const modeUsed = await sceneManagerRef.current.launchUniversalAR(
         overlayRootRef.current ?? undefined
       );
+
+      if (modeUsed === 'simulation') {
+        setIsSimulatingAR(true);
+      } else if (modeUsed === 'camera') {
+        setIsCameraARActive(true);
+      }
     } catch (err: any) {
+      console.warn('AR launch issue', err);
+      // Open guidance modal with mobile QR code & manual trigger options
       setXRErrorMessage(
-        err?.message || 'Unable to start WebXR AR session. Please check device permissions.'
+        err?.message || 'Unable to start camera or WebXR session. Please grant camera permissions.'
       );
       setIsXRModalOpen(true);
     }
@@ -203,7 +222,7 @@ export default function App() {
     }
   }, []);
 
-  // Simulation mode for testing flat surface scan and tap-to-spawn in browser
+  // Simulation mode for testing flat surface scan and tap-to-spawn in desktop browser
   const handleStartSimulation = useCallback(() => {
     if (!sceneManagerRef.current) return;
     sceneManagerRef.current.startSimulationMode();
@@ -215,11 +234,15 @@ export default function App() {
     if (inXRSession) {
       sceneManagerRef.current?.endXRSession();
     }
+    if (isCameraARActive) {
+      sceneManagerRef.current?.stopCameraARMode();
+      setIsCameraARActive(false);
+    }
     if (isSimulatingAR) {
       sceneManagerRef.current?.stopSimulationMode();
       setIsSimulatingAR(false);
     }
-  }, [inXRSession, isSimulatingAR]);
+  }, [inXRSession, isCameraARActive, isSimulatingAR]);
 
   const handleSpawnClick = useCallback(() => {
     sceneManagerRef.current?.spawnChairAtReticle();
@@ -229,7 +252,7 @@ export default function App() {
     sceneManagerRef.current?.resetARPlacement();
   }, []);
 
-  const isARActive = (inXRSession && xrMode === 'immersive-ar') || isSimulatingAR;
+  const isARActive = (inXRSession && xrMode === 'immersive-ar') || isCameraARActive || isSimulatingAR;
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#E4E7EB]">
@@ -239,9 +262,9 @@ export default function App() {
         className="absolute inset-0 w-full h-full cursor-grab active:cursor-grabbing"
       />
 
-      {/* WebXR DOM Overlay / HUD container */}
+      {/* WebXR / Camera AR DOM Overlay container */}
       <div ref={overlayRootRef} className="absolute inset-0 pointer-events-none">
-        {/* If in AR (real WebXR or Simulation), show surface scan HUD with tap-to-spawn prompt */}
+        {/* If in AR (Android WebXR, iOS Camera AR, or Simulation), show surface scan HUD with tap-to-spawn prompt */}
         {isARActive && (
           <AROverlayHUD
             status={arStatus}
@@ -251,6 +274,8 @@ export default function App() {
             onExit={handleExitAR}
             fabricKey={fabricKey}
             onFabricChange={handleFabricChange}
+            showLabels={showLabels}
+            onToggleLabels={handleToggleLabels}
           />
         )}
 
@@ -286,6 +311,8 @@ export default function App() {
           onLaunchAR={handleLaunchAR}
           onLaunchVR={handleLaunchVR}
           onStartSimulation={handleStartSimulation}
+          showLabels={showLabels}
+          onToggleLabels={handleToggleLabels}
           onOpenSpecs={() => setIsSpecsOpen(true)}
           onOpenXRGuide={() => {
             setXRErrorMessage(null);

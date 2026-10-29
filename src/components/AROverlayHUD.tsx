@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Smartphone, RefreshCw, X, Hand, Check, Sparkles } from 'lucide-react';
+import { Smartphone, RefreshCw, X, Hand, Check, Sparkles, Tag } from 'lucide-react';
 import { ARPlacementStatus } from '../three/sceneManager';
 import { FabricColorKey, FABRIC_OPTIONS } from '../three/chairBuilder';
 
@@ -11,6 +11,8 @@ interface AROverlayHUDProps {
   onExit: () => void;
   fabricKey: FabricColorKey;
   onFabricChange: (key: FabricColorKey) => void;
+  showLabels?: boolean;
+  onToggleLabels?: () => void;
 }
 
 export function AROverlayHUD({
@@ -21,6 +23,8 @@ export function AROverlayHUD({
   onExit,
   fabricKey,
   onFabricChange,
+  showLabels = true,
+  onToggleLabels,
 }: AROverlayHUDProps) {
   return (
     <div className="fixed inset-0 pointer-events-none z-50 flex flex-col justify-between p-4 sm:p-6 select-none">
@@ -28,17 +32,33 @@ export function AROverlayHUD({
       <div className="flex items-center justify-between w-full max-w-lg mx-auto">
         <div className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 border border-white/20 text-white text-xs font-medium backdrop-blur-md shadow-lg">
           <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-          <span>{isSimulation ? 'AR Floor Tap Preview' : 'WebXR Augmented Reality'}</span>
+          <span>{isSimulation ? 'AR Floor Tap Preview' : 'AR Mode (iOS & Android)'}</span>
         </div>
 
-        <button
-          onClick={onExit}
-          className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600/90 hover:bg-red-500 text-white text-xs font-medium shadow-lg transition-colors"
-          aria-label="Exit AR"
-        >
-          <X className="w-3.5 h-3.5" />
-          <span>Exit AR</span>
-        </button>
+        <div className="pointer-events-auto flex items-center gap-2">
+          {onToggleLabels && (
+            <button
+              onClick={onToggleLabels}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-md border shadow-lg transition-colors ${
+                showLabels
+                  ? 'bg-emerald-500/30 border-emerald-400 text-emerald-300'
+                  : 'bg-black/75 border-white/20 text-gray-300 hover:text-white'
+              }`}
+            >
+              <Tag className="w-3.5 h-3.5" />
+              <span>Label</span>
+            </button>
+          )}
+
+          <button
+            onClick={onExit}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600/90 hover:bg-red-500 text-white text-xs font-medium shadow-lg transition-colors"
+            aria-label="Exit AR"
+          >
+            <X className="w-3.5 h-3.5" />
+            <span>Exit AR</span>
+          </button>
+        </div>
       </div>
 
       {/* Center Guidance Prompt */}
