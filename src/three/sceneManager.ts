@@ -24,6 +24,16 @@ export interface SceneCallbacks {
   onCameraAREnd?: () => void;
 }
 
+export interface WebXRSupportInfo {
+  checked: boolean;
+  isSupported: boolean;
+  isARSupported: boolean;
+  isVRSupported: boolean;
+  hasXRAPI: boolean;
+  isSecureContext: boolean;
+  reason?: string;
+}
+
 export interface ChairSceneManager {
   domElement: HTMLCanvasElement;
   chair: ChairController;
@@ -33,12 +43,15 @@ export interface ChairSceneManager {
   setExposure: (val: number) => void;
   toggleLabels: (visible?: boolean) => boolean;
   areLabelsVisible: () => boolean;
+  setChairVisible: (visible: boolean) => void;
+  isChairVisible: () => boolean;
   startXRSession: (mode: 'immersive-ar' | 'immersive-vr', overlayElement?: HTMLElement) => Promise<void>;
   endXRSession: () => Promise<void>;
   startCameraARMode: () => Promise<void>;
   stopCameraARMode: () => void;
   launchUniversalAR: (overlayElement?: HTMLElement) => Promise<ARModeType>;
   isXRSupported: (mode: 'immersive-ar' | 'immersive-vr') => Promise<boolean>;
+  checkWebXRSupport: () => Promise<WebXRSupportInfo>;
   isSessionActive: () => boolean;
   isCameraARActive: () => boolean;
   spawnChairAtReticle: () => boolean;
@@ -93,8 +106,9 @@ export function initChairScene(
   renderer.shadowMap.enabled = !isSoftwareGl;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-  // Enable WebXR
+  // Enable WebXR & request real-world floor elevation
   renderer.xr.enabled = true;
+  renderer.xr.setReferenceSpaceType('local-floor');
 
   container.appendChild(renderer.domElement);
 
@@ -199,8 +213,8 @@ export function initChairScene(
   });
   const shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
   shadowMesh.rotation.x = -Math.PI / 2;
-  shadowMesh.position.set(0, 0.002, 0.03);
-  floorGroup.add(shadowMesh);
+  shadowMesh.position.set(0, 0.001, 0.03);
+  scene.add(shadowMesh);
 
   // 9. Create the Lounge Chair & Camera-Following Labels
   const chair = createLoungeChair();
@@ -219,6 +233,8 @@ export function initChairScene(
   let activeXRMode: 'immersive-ar' | 'immersive-vr' | null = null;
   let hitTestSource: XRHitTestSource | null = null;
   let hitTestSourceRequested = false;
+  let lastHitResult: any = null;
+  let currentAnchor: any = null;
 
   // Placement state
   let chairSpawned = false;
@@ -244,16 +260,18 @@ export function initChairScene(
     }
   }
 
-  // Rotate chair in AR mode
+  // Rotate chair in AR mode (rotates both chair and contact shadow on the floor)
   function rotateChairInAR(deltaAngle: number) {
     if (chair.group) {
       chair.group.rotation.y += deltaAngle;
+      shadowMesh.rotation.z = -chair.group.rotation.y;
     }
   }
 
   function setChairRotationY(angle: number) {
     if (chair.group) {
       chair.group.rotation.y = angle;
+      shadowMesh.rotation.z = -angle;
     }
   }
 
@@ -268,26 +286,41 @@ export function initChairScene(
       return false;
     }
 
+    if (chairSpawned && !forcedPos) {
+      return true;
+    }
+
     const xrCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
     const camPos = new THREE.Vector3();
     xrCam.getWorldPosition(camPos);
 
+    // Extract exact flat surface plane coordinates from the reticle's matrix
     const spawnPos = forcedPos
       ? forcedPos.clone()
       : new THREE.Vector3().setFromMatrixPosition(reticle.group.matrix);
 
-    // Set position & ensure proper Y ground elevation
-    chair.group.position.set(spawnPos.x, 0.04, spawnPos.z);
+    // Anchor the chair directly onto the detected flat surface (X, Y, Z match the detected plane)
+    chair.group.position.copy(spawnPos);
 
-    // Make chair initially face user/camera
+    // Make chair initially face user/camera while standing upright on the plane
     const dx = camPos.x - chair.group.position.x;
     const dz = camPos.z - chair.group.position.z;
     if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
-      chair.group.rotation.y = Math.atan2(dx, dz);
+      chair.group.rotation.set(0, Math.atan2(dx, dz), 0);
+    } else {
+      chair.group.rotation.set(0, 0, 0);
     }
 
-    // Ground contact shadow under chair in AR
-    shadowMesh.position.set(chair.group.position.x, 0.002, chair.group.position.z + 0.03);
+    // Bind real WebXR Anchor for drift-free physical surface locking if supported
+    if (activeXRMode === 'immersive-ar' && lastHitResult && typeof (lastHitResult as any).createAnchor === 'function') {
+      (lastHitResult as any).createAnchor().then((anchor: any) => {
+        currentAnchor = anchor;
+      }).catch(() => {});
+    }
+
+    // Anchor contact shadow directly onto the detected flat surface beneath the chair
+    shadowMesh.position.set(spawnPos.x, spawnPos.y + 0.001, spawnPos.z);
+    shadowMesh.rotation.set(-Math.PI / 2, 0, -chair.group.rotation.y);
     shadowMesh.visible = true;
 
     // Visual spawn & full scale
@@ -296,17 +329,25 @@ export function initChairScene(
     chair.group.scale.set(1.0, 1.0, 1.0);
     currentChairScale = 1.0;
 
-    // Play reticle ripple shockwave
-    reticle.triggerSpawnEffect(chair.group.position);
+    // Hide reticle scan ring and trigger spawn ripple on the floor
+    reticle.showIndicator(false);
+    reticle.triggerSpawnEffect(spawnPos);
 
     updateARStatus('placed');
     return true;
   }
 
   function resetARPlacement() {
+    if (currentAnchor && typeof (currentAnchor as any).delete === 'function') {
+      try {
+        (currentAnchor as any).delete();
+      } catch {}
+      currentAnchor = null;
+    }
     chairSpawned = false;
     chair.group.visible = false;
     shadowMesh.visible = false;
+    reticle.showIndicator(true);
     reticle.group.visible = false;
     cameraARScanTimer = 0;
     updateARStatus('scanning');
@@ -347,9 +388,10 @@ export function initChairScene(
     const intersects = raycaster.intersectObject(floorMesh);
     if (intersects.length > 0) {
       const hit = intersects[0];
-      reticle.group.visible = true;
-      reticle.group.matrix.makeTranslation(hit.point.x, hit.point.y + 0.002, hit.point.z);
       if (!chairSpawned) {
+        reticle.showIndicator(true);
+        reticle.group.visible = true;
+        reticle.group.matrix.makeTranslation(hit.point.x, hit.point.y + 0.001, hit.point.z);
         updateARStatus('ready');
       }
     } else {
@@ -430,10 +472,11 @@ export function initChairScene(
         // Require scanning sweep before detecting flat ground plane
         if (cameraARScanTimer > 0.8) {
           const dir = new THREE.Vector3(0, 0, -1.5).applyQuaternion(camera.quaternion);
+          reticle.showIndicator(true);
           reticle.group.visible = true;
           reticle.group.matrix.makeTranslation(
             camera.position.x + dir.x,
-            0.002,
+            0,
             camera.position.z + dir.z
           );
           updateARStatus('ready');
@@ -442,11 +485,11 @@ export function initChairScene(
           updateARStatus('scanning');
         }
       } else {
-        reticle.group.visible = false;
+        reticle.showIndicator(false);
       }
     }
 
-    // WebXR Hit-Testing in AR mode
+    // WebXR Hit-Testing & Anchor tracking in AR mode
     if (frame && activeXRMode === 'immersive-ar') {
       const session = frame.session;
       const referenceSpace = renderer.xr.getReferenceSpace();
@@ -460,23 +503,39 @@ export function initChairScene(
         hitTestSourceRequested = true;
       }
 
-      if (hitTestSource && referenceSpace) {
+      if (chairSpawned) {
+        reticle.showIndicator(false);
+        // Maintain rigid physical anchoring against SLAM drift if WebXR Anchor is active
+        if (currentAnchor && referenceSpace) {
+          const anchorPose = frame.getPose(currentAnchor.anchorSpace, referenceSpace);
+          if (anchorPose) {
+            chair.group.position.set(
+              anchorPose.transform.position.x,
+              anchorPose.transform.position.y,
+              anchorPose.transform.position.z
+            );
+            shadowMesh.position.set(
+              chair.group.position.x,
+              chair.group.position.y + 0.001,
+              chair.group.position.z
+            );
+          }
+        }
+      } else if (hitTestSource && referenceSpace) {
         const hitTestResults = frame.getHitTestResults(hitTestSource);
         if (hitTestResults.length > 0) {
           const hit = hitTestResults[0];
           const pose = hit.getPose(referenceSpace);
           if (pose) {
+            lastHitResult = hit;
+            reticle.showIndicator(true);
             reticle.group.visible = true;
             reticle.group.matrix.fromArray(pose.transform.matrix);
-            if (!chairSpawned) {
-              updateARStatus('ready');
-            }
+            updateARStatus('ready');
           }
         } else {
           reticle.group.visible = false;
-          if (!chairSpawned) {
-            updateARStatus('scanning');
-          }
+          updateARStatus('scanning');
         }
       }
     }
@@ -534,9 +593,11 @@ export function initChairScene(
       // Chair only spawns when flat surface is detected
       chair.group.visible = false;
       chairSpawned = false;
+      reticle.showIndicator(false);
       reticle.group.visible = false;
       cameraARScanTimer = 0;
       isCameraARActive = true;
+      controls.enabled = false;
 
       // Camera preset for AR eye-level looking at ground ahead
       camera.position.set(0, 0.9, 0.5);
@@ -562,13 +623,15 @@ export function initChairScene(
     }
     isCameraARActive = false;
     chairSpawned = true;
+    controls.enabled = true;
 
     // Restore normal studio scene
     scene.background = floorBgColor;
     scene.fog = new THREE.Fog(0xE4E7EB, 4.5, 16);
     floorMesh.visible = true;
     shadowMesh.visible = true;
-    shadowMesh.position.set(0, 0.002, 0.03);
+    shadowMesh.position.set(0, 0.001, 0.03);
+    shadowMesh.rotation.set(-Math.PI / 2, 0, 0);
 
     chair.group.visible = true;
     chair.group.position.set(0, 0, 0);
@@ -604,6 +667,18 @@ export function initChairScene(
 
     areLabelsVisible: () => chairLabels.isVisible(),
 
+    setChairVisible: (visible: boolean) => {
+      chair.group.visible = visible;
+      shadowMesh.visible = visible;
+      if (!visible) {
+        chairLabels.setVisible(false);
+      } else {
+        chairLabels.setVisible(true);
+      }
+    },
+
+    isChairVisible: () => chair.group.visible,
+
     spawnChairAtReticle,
     resetARPlacement,
     rotateChairInAR,
@@ -615,19 +690,23 @@ export function initChairScene(
       chairSpawned = false;
       chair.group.visible = false;
       shadowMesh.visible = false;
+      reticle.showIndicator(false);
       reticle.group.visible = false;
+      controls.enabled = false;
       updateARStatus('scanning');
     },
 
     stopSimulationMode: () => {
       isSimulatingAR = false;
       chairSpawned = true;
+      controls.enabled = true;
       chair.group.visible = true;
       chair.group.position.set(0, 0, 0);
       chair.group.rotation.set(0, 0, 0);
       chair.group.scale.set(1, 1, 1);
       reticle.group.visible = false;
-      shadowMesh.position.set(0, 0.002, 0.03);
+      shadowMesh.position.set(0, 0.001, 0.03);
+      shadowMesh.rotation.set(-Math.PI / 2, 0, 0);
       shadowMesh.visible = true;
     },
 
@@ -645,8 +724,14 @@ export function initChairScene(
           const supported = await navigator.xr.isSessionSupported('immersive-ar');
           if (supported) {
             const sessionOptions: XRSessionInit = {
-              requiredFeatures: ['local-floor'],
-              optionalFeatures: ['hit-test', 'dom-overlay', 'bounded-floor'],
+              optionalFeatures: [
+                'local-floor',
+                'bounded-floor',
+                'hit-test',
+                'dom-overlay',
+                'anchors',
+                'light-estimation',
+              ],
             };
             if (overlayElement) {
               sessionOptions.domOverlay = { root: overlayElement };
@@ -654,19 +739,28 @@ export function initChairScene(
             const session = await navigator.xr.requestSession('immersive-ar', sessionOptions);
             currentXRSession = session;
             activeXRMode = 'immersive-ar';
+            controls.enabled = false;
 
             session.addEventListener('end', () => {
               currentXRSession = null;
               activeXRMode = null;
               hitTestSource = null;
               hitTestSourceRequested = false;
+              if (currentAnchor && typeof (currentAnchor as any).delete === 'function') {
+                try {
+                  currentAnchor.delete();
+                } catch {}
+                currentAnchor = null;
+              }
+              controls.enabled = true;
               reticle.group.visible = false;
 
               scene.background = floorBgColor;
               floorGroup.visible = true;
               floorMesh.visible = true;
               shadowMesh.visible = true;
-              shadowMesh.position.set(0, 0.002, 0.03);
+              shadowMesh.position.set(0, 0.001, 0.03);
+              shadowMesh.rotation.set(-Math.PI / 2, 0, 0);
               chair.group.visible = true;
               chair.group.position.set(0, 0, 0);
               chair.group.rotation.set(0, 0, 0);
@@ -684,6 +778,7 @@ export function initChairScene(
             // Chair only spawns when flat surface is detected
             chair.group.visible = false;
             chairSpawned = false;
+            reticle.showIndicator(false);
             reticle.group.visible = false;
 
             updateARStatus('scanning');
@@ -723,6 +818,52 @@ export function initChairScene(
       }
     },
 
+    checkWebXRSupport: async (): Promise<WebXRSupportInfo> => {
+      const isSecure = typeof window !== 'undefined' ? window.isSecureContext : false;
+      const xr = typeof navigator !== 'undefined' && 'xr' in navigator ? navigator.xr : undefined;
+
+      if (!xr) {
+        return {
+          checked: true,
+          isSupported: false,
+          isARSupported: false,
+          isVRSupported: false,
+          hasXRAPI: false,
+          isSecureContext: isSecure,
+          reason: 'WebXR Device API (navigator.xr) is not supported in this browser.',
+        };
+      }
+
+      let arSupported = false;
+      let vrSupported = false;
+
+      try {
+        arSupported = await xr.isSessionSupported('immersive-ar');
+      } catch {
+        arSupported = false;
+      }
+
+      try {
+        vrSupported = await xr.isSessionSupported('immersive-vr');
+      } catch {
+        vrSupported = false;
+      }
+
+      // Check specifically if WebXR AR session is supported
+      const isSupported = arSupported;
+      return {
+        checked: true,
+        isSupported,
+        isARSupported: arSupported,
+        isVRSupported: vrSupported,
+        hasXRAPI: true,
+        isSecureContext: isSecure,
+        reason: isSupported
+          ? undefined
+          : 'WebXR immersive-ar session is not supported on this device/hardware.',
+      };
+    },
+
     isSessionActive: () => !!currentXRSession,
 
     startXRSession: async (mode: 'immersive-ar' | 'immersive-vr', overlayElement?: HTMLElement) => {
@@ -735,8 +876,14 @@ export function initChairScene(
       }
 
       const sessionOptions: XRSessionInit = {
-        requiredFeatures: ['local-floor'],
-        optionalFeatures: ['hit-test', 'dom-overlay', 'bounded-floor'],
+        optionalFeatures: [
+          'local-floor',
+          'bounded-floor',
+          'hit-test',
+          'dom-overlay',
+          'anchors',
+          'light-estimation',
+        ],
       };
 
       if (overlayElement) {
@@ -747,19 +894,28 @@ export function initChairScene(
         const session = await navigator.xr.requestSession(mode, sessionOptions);
         currentXRSession = session;
         activeXRMode = mode;
+        controls.enabled = false;
 
         session.addEventListener('end', () => {
           currentXRSession = null;
           activeXRMode = null;
           hitTestSource = null;
           hitTestSourceRequested = false;
+          if (currentAnchor && typeof (currentAnchor as any).delete === 'function') {
+            try {
+              currentAnchor.delete();
+            } catch {}
+            currentAnchor = null;
+          }
+          controls.enabled = true;
           reticle.group.visible = false;
 
           scene.background = floorBgColor;
           floorGroup.visible = true;
           floorMesh.visible = true;
           shadowMesh.visible = true;
-          shadowMesh.position.set(0, 0.002, 0.03);
+          shadowMesh.position.set(0, 0.001, 0.03);
+          shadowMesh.rotation.set(-Math.PI / 2, 0, 0);
           chair.group.visible = true;
           chair.group.position.set(0, 0, 0);
           chair.group.rotation.set(0, 0, 0);
@@ -779,6 +935,7 @@ export function initChairScene(
           // Chair only spawns when flat surface is detected
           chair.group.visible = false;
           chairSpawned = false;
+          reticle.showIndicator(false);
           reticle.group.visible = false;
 
           updateARStatus('scanning');

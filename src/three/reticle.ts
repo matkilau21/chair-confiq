@@ -4,6 +4,7 @@ export interface ARReticle {
   group: THREE.Group;
   update: (delta: number) => void;
   triggerSpawnEffect: (pos: THREE.Vector3) => void;
+  showIndicator: (visible: boolean) => void;
   dispose: () => void;
 }
 
@@ -17,6 +18,10 @@ export function createARReticle(): ARReticle {
   group.matrixAutoUpdate = false;
   group.visible = false;
 
+  // Dedicated container for scanning indicator rings and dots (hidden once placed)
+  const indicatorGroup = new THREE.Group();
+  group.add(indicatorGroup);
+
   // 1. Outer Ring
   const outerRingGeo = new THREE.RingGeometry(0.20, 0.22, 64);
   outerRingGeo.rotateX(-Math.PI / 2);
@@ -28,7 +33,7 @@ export function createARReticle(): ARReticle {
     depthWrite: false,
   });
   const outerRing = new THREE.Mesh(outerRingGeo, ringMat);
-  group.add(outerRing);
+  indicatorGroup.add(outerRing);
 
   // 2. Inner Concentric Accent Ring
   const innerRingGeo = new THREE.RingGeometry(0.13, 0.14, 48);
@@ -41,7 +46,7 @@ export function createARReticle(): ARReticle {
     depthWrite: false,
   });
   const innerRing = new THREE.Mesh(innerRingGeo, innerRingMat);
-  group.add(innerRing);
+  indicatorGroup.add(innerRing);
 
   // 3. Center Target Dot
   const centerDotGeo = new THREE.CircleGeometry(0.02, 32);
@@ -54,7 +59,7 @@ export function createARReticle(): ARReticle {
     depthWrite: false,
   });
   const centerDot = new THREE.Mesh(centerDotGeo, centerDotMat);
-  group.add(centerDot);
+  indicatorGroup.add(centerDot);
 
   // 4. Four Cardinal Alignment Ticks
   const tickGeo = new THREE.PlaneGeometry(0.015, 0.05);
@@ -78,10 +83,10 @@ export function createARReticle(): ARReticle {
     const tick = new THREE.Mesh(tickGeo, tickMat);
     tick.position.set(t.x, 0.001, t.z);
     tick.rotation.y = t.rot;
-    group.add(tick);
+    indicatorGroup.add(tick);
   });
 
-  // 5. Spawn Ripple Wave Mesh
+  // 5. Spawn Ripple Wave Mesh (added to root group, persists through spawn)
   const rippleGeo = new THREE.RingGeometry(0.05, 0.08, 64);
   rippleGeo.rotateX(-Math.PI / 2);
   const rippleMat = new THREE.MeshBasicMaterial({
@@ -104,6 +109,10 @@ export function createARReticle(): ARReticle {
   return {
     group,
 
+    showIndicator: (visible: boolean) => {
+      indicatorGroup.visible = visible;
+    },
+
     update: (delta: number) => {
       animTime += delta;
 
@@ -122,6 +131,10 @@ export function createARReticle(): ARReticle {
         if (progress >= 1) {
           rippleActive = false;
           rippleMesh.visible = false;
+          // If indicator is also hidden, hide whole group
+          if (!indicatorGroup.visible) {
+            group.visible = false;
+          }
         } else {
           const scale = 1 + progress * 5.0; // expand outward
           rippleMesh.scale.set(scale, 1, scale);
@@ -133,6 +146,8 @@ export function createARReticle(): ARReticle {
     triggerSpawnEffect: (pos: THREE.Vector3) => {
       rippleActive = true;
       rippleTime = 0;
+      indicatorGroup.visible = false;
+      group.visible = true;
       rippleMesh.visible = true;
       rippleMesh.position.set(0, 0.002, 0);
       rippleMesh.scale.set(1, 1, 1);

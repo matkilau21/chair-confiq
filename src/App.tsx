@@ -4,12 +4,14 @@ import {
   ChairSceneManager,
   CameraPreset,
   ARPlacementStatus,
+  WebXRSupportInfo,
 } from './three/sceneManager';
 import { FabricColorKey, LegMaterialKey } from './three/chairBuilder';
 import { ConfiguratorUI } from './components/ConfiguratorUI';
 import { DimensionsModal } from './components/DimensionsModal';
 import { XRModal } from './components/XRModal';
 import { AROverlayHUD } from './components/AROverlayHUD';
+import { UnsupportedXRWarning } from './components/UnsupportedXRWarning';
 
 export default function App() {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -25,7 +27,19 @@ export default function App() {
   const [isBrightLighting, setIsBrightLighting] = useState<boolean>(false);
   const [showLabels, setShowLabels] = useState<boolean>(true);
 
-  // AR & WebXR state
+  // WebXR Device Support & Warning modal state
+  const [xrSupportInfo, setXrSupportInfo] = useState<WebXRSupportInfo>({
+    checked: false,
+    isSupported: false,
+    isARSupported: false,
+    isVRSupported: false,
+    hasXRAPI: false,
+    isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : false,
+  });
+  const [isChairVisible, setIsChairVisible] = useState<boolean>(true);
+  const [showUnsupportedWarning, setShowUnsupportedWarning] = useState<boolean>(false);
+
+  // AR & WebXR session state
   const [inXRSession, setInXRSession] = useState<boolean>(false);
   const [xrMode, setXrMode] = useState<'immersive-ar' | 'immersive-vr' | null>(null);
   const [arStatus, setArStatus] = useState<ARPlacementStatus>('scanning');
@@ -63,6 +77,10 @@ export default function App() {
     });
 
     sceneManagerRef.current = manager;
+
+    // Chair is visible in 3D studio configurator on page load
+    manager.setChairVisible(true);
+    setIsChairVisible(true);
 
     // Window resize handler
     const handleResize = () => {
@@ -179,6 +197,16 @@ export default function App() {
     setXRErrorMessage(null);
     if (!sceneManagerRef.current) return;
 
+    // Requirement: warning device not support ONLY appear when user clicks AR mode button
+    const support = await sceneManagerRef.current.checkWebXRSupport();
+    setXrSupportInfo(support);
+
+    if (!support.isSupported) {
+      // If device does not support WebXR: do not show chair in AR / do not start AR, show warning
+      setShowUnsupportedWarning(true);
+      return;
+    }
+
     try {
       const modeUsed = await sceneManagerRef.current.launchUniversalAR(
         overlayRootRef.current ?? undefined
@@ -193,9 +221,9 @@ export default function App() {
       console.warn('AR launch issue', err);
       // Open guidance modal with mobile QR code & manual trigger options
       setXRErrorMessage(
-        err?.message || 'Unable to start camera or WebXR session. Please grant camera permissions.'
+        err?.message || 'Unable to start WebXR session. Please ensure your device supports WebXR.'
       );
-      setIsXRModalOpen(true);
+      setShowUnsupportedWarning(true);
     }
   }, []);
 
@@ -225,6 +253,8 @@ export default function App() {
   // Simulation mode for testing flat surface scan and tap-to-spawn in desktop browser
   const handleStartSimulation = useCallback(() => {
     if (!sceneManagerRef.current) return;
+    setShowUnsupportedWarning(false);
+    setIsXRModalOpen(false);
     sceneManagerRef.current.startSimulationMode();
     setIsSimulatingAR(true);
     setArStatus('scanning');
@@ -254,6 +284,23 @@ export default function App() {
 
   const handleRotateChairInAR = useCallback((deltaAngle: number) => {
     sceneManagerRef.current?.rotateChairInAR(deltaAngle);
+  }, []);
+
+  const handleToggleChairVisibility = useCallback(() => {
+    setIsChairVisible(prev => {
+      const next = !prev;
+      sceneManagerRef.current?.setChairVisible(next);
+      return next;
+    });
+  }, []);
+
+  const handleRecheckWebXR = useCallback(async () => {
+    if (!sceneManagerRef.current) return;
+    const info = await sceneManagerRef.current.checkWebXRSupport();
+    setXrSupportInfo(info);
+    if (info.isSupported) {
+      setShowUnsupportedWarning(false);
+    }
   }, []);
 
   const isARActive = (inXRSession && xrMode === 'immersive-ar') || isCameraARActive || isSimulatingAR;
@@ -343,6 +390,20 @@ export default function App() {
         onRetryVR={handleLaunchVR}
         onStartSimulation={handleStartSimulation}
         appUrl={window.location.href}
+      />
+
+      {/* WebXR Device Compatibility Warning & Diagnostics (Shown only when user clicks AR on unsupported device) */}
+      <UnsupportedXRWarning
+        isOpen={showUnsupportedWarning}
+        onClose={() => setShowUnsupportedWarning(false)}
+        supportInfo={xrSupportInfo}
+        onRecheck={handleRecheckWebXR}
+        onStartSimulation={handleStartSimulation}
+        onOpenQRGuide={() => {
+          setShowUnsupportedWarning(false);
+          setXRErrorMessage(null);
+          setIsXRModalOpen(true);
+        }}
       />
     </div>
   );

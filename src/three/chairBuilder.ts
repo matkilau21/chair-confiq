@@ -80,6 +80,11 @@ export function createLoungeChair(): ChairController {
   const rootGroup = new THREE.Group();
   rootGroup.name = 'LoungeChair';
 
+  // Wrapper for chair geometry to ensure rootGroup pivot (0,0,0) is exactly centered on the floor surface
+  const chairModelGroup = new THREE.Group();
+  chairModelGroup.name = 'ChairModelGroup';
+  rootGroup.add(chairModelGroup);
+
   // Sub-groups for exploded view kinematics
   const seatGroup = new THREE.Group();
   const backrestGroup = new THREE.Group();
@@ -87,11 +92,11 @@ export function createLoungeChair(): ChairController {
   const armrestRightGroup = new THREE.Group();
   const baseGroup = new THREE.Group();
 
-  rootGroup.add(baseGroup);
-  rootGroup.add(seatGroup);
-  rootGroup.add(backrestGroup);
-  rootGroup.add(armrestLeftGroup);
-  rootGroup.add(armrestRightGroup);
+  chairModelGroup.add(baseGroup);
+  chairModelGroup.add(seatGroup);
+  chairModelGroup.add(backrestGroup);
+  chairModelGroup.add(armrestLeftGroup);
+  chairModelGroup.add(armrestRightGroup);
 
   // Generate textures
   const fabricTextures = createFabricTexture();
@@ -475,13 +480,14 @@ export function createLoungeChair(): ChairController {
   });
 
   // Calculate bounding box for real dimensions
-  const bbox = new THREE.Box3().setFromObject(rootGroup);
+  const bbox = new THREE.Box3().setFromObject(chairModelGroup);
   const size = new THREE.Vector3();
   bbox.getSize(size);
 
-  // Position entire chair so bottom of feet touches floor at Y = 0
+  // Position chair model so bottom of feet touches floor at local Y = 0 inside rootGroup
   const minY = bbox.min.y;
-  rootGroup.position.y = -minY;
+  chairModelGroup.position.y = -minY;
+  rootGroup.position.set(0, 0, 0);
 
   // --- Exploded view state ---
   let targetExploded = 0;
